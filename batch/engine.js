@@ -155,7 +155,9 @@ export class Engine {
     const sl = (recipe && recipe.sliders) || {}, se = (recipe && recipe.selects) || {};
     for (const k in sl) s.sliders[k] = String(sl[k]);
     for (const k in se) s.selects[k] = se[k];
-    const n = (id) => parseFloat(s.sliders[id]) || 0;
+    // Read the amounts from the recipe, not the snapshot: the factory snapshot carries non-zero
+    // grain/halation/bloom amounts behind switched-off sections.
+    const n = (id) => parseFloat(sl[id]) || 0;
     s.toggles.adjust = Object.keys(sl).some((k) => k.startsWith('adj-') && parseFloat(sl[k]) !== parseFloat(this.pristine.sliders[k]));
     s.toggles.grain = n('grain-a') > 0;
     s.toggles.hal = n('hal-a') > 0;

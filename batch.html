@@ -1,1 +1,278 @@
-<!doctype html><meta charset="utf-8"><title>probe</title><script src="coi-serviceworker.min.js"></script><body>probe</body>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Chromasmith Batch</title>
+<meta name="description" content="Grade a whole folder of photos with one film look and export them all — offline, in your browser.">
+<link rel="icon" href="favicon.ico">
+<!-- Same cross-origin isolation shim as the editor: RAW decode needs SharedArrayBuffer, and the
+     hidden engine frame can only be isolated if this page is. -->
+<script src="coi-serviceworker.min.js"></script>
+<style>
+:root{
+  --bg:#141414;--ink:#f2f0ea;--mut:#8d8b85;--acc:#ff3b1f;--ok:#58b368;--bad:#e05252;
+  --line:color-mix(in srgb,var(--ink) 13%,transparent);
+  --line2:color-mix(in srgb,var(--ink) 26%,transparent);
+  --raise:color-mix(in srgb,var(--ink) 6%,var(--bg));
+  --well:color-mix(in srgb,#000 38%,var(--bg));
+  --font:'Gramatika',system-ui,-apple-system,'Segoe UI',sans-serif;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme:light){
+  :root{--bg:#f4f2ec;--ink:#111;--mut:#6b685f;--ok:#2e7d3e;--bad:#c0392b;
+    --well:color-mix(in srgb,var(--ink) 9%,var(--bg));color-scheme:light}
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:12px/1.4 var(--font);-webkit-font-smoothing:antialiased;overflow:hidden;display:flex;flex-direction:column}
+button,input,select{font:inherit;color:inherit}
+[hidden]{display:none!important}
+:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+
+/* ── buttons ── */
+.btn{background:none;border:1px solid var(--line2);padding:6px 12px;cursor:pointer;white-space:nowrap;border-radius:0}
+.btn:hover{border-color:var(--ink)}
+.btn:disabled{opacity:.4;cursor:default;border-color:var(--line2)}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+.btn.pri:hover{filter:brightness(1.1)}
+.btn.quiet{border-color:transparent;color:var(--mut);padding:6px 8px}
+.btn.quiet:hover{color:var(--ink);border-color:transparent}
+.btn.sm{padding:3px 8px}
+
+/* ── top bar ── */
+#top{display:flex;align-items:center;gap:12px;padding:0 14px;height:44px;border-bottom:1px solid var(--line);flex:none}
+.brand{display:flex;align-items:baseline;gap:8px;letter-spacing:.14em;font-weight:700;font-size:13px}
+.brand span{color:var(--acc);font-weight:600}
+#top .sp{flex:1}
+#top a{color:var(--mut);text-decoration:none}
+#top a:hover{color:var(--ink)}
+
+/* ── layout ── */
+#app{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 340px;grid-template-rows:minmax(0,1.25fr) minmax(0,1fr)}
+#stage{grid-column:1;grid-row:1;display:flex;flex-direction:column;min-height:0;background:var(--well)}
+#gridwrap{grid-column:1;grid-row:2;display:flex;flex-direction:column;min-height:0;border-top:1px solid var(--line)}
+#panel{grid-column:2;grid-row:1/3;display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--line)}
+body.empty #stage,body.empty #gridwrap,body.empty #panel{display:none}
+body:not(.empty) #welcome{display:none}
+
+/* ── welcome / drop ── */
+#welcome{grid-column:1/3;grid-row:1/3;display:flex;align-items:center;justify-content:center;padding:24px}
+.drop{border:1px dashed var(--line2);padding:56px 48px;max-width:560px;width:100%;text-align:center}
+.drop h1{font-size:24px;font-weight:600;margin:0 0 8px;letter-spacing:-.01em}
+.drop p{color:var(--mut);margin:0 0 22px;font-size:14px;line-height:1.5}
+.drop .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.drop .fine{margin:22px 0 0;font-size:12px}
+.drop .err{color:var(--bad);margin-top:16px;font-size:13px}
+body.dragging::after{content:'Drop to add photos';position:fixed;inset:8px;border:2px dashed var(--acc);background:color-mix(in srgb,var(--bg) 82%,transparent);
+  display:flex;align-items:center;justify-content:center;font-size:21px;font-weight:600;z-index:50;pointer-events:none}
+
+/* ── preview ── */
+#pv{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:14px;position:relative}
+#pv canvas{max-width:100%;max-height:100%;display:block;box-shadow:0 2px 24px rgba(0,0,0,.35)}
+#pv .tag{position:absolute;left:22px;top:22px;background:var(--bg);border:1px solid var(--line2);padding:2px 8px;letter-spacing:.08em;text-transform:uppercase;font-size:11px}
+#pvbar{display:flex;align-items:center;gap:10px;padding:6px 14px;border-top:1px solid var(--line);background:var(--bg);flex:none;min-height:36px}
+#pvname{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+#pvinfo{color:var(--mut);white-space:nowrap;font-variant-numeric:tabular-nums}
+#pvbar .sp{flex:1}
+
+/* ── grid ── */
+#gridbar{display:flex;align-items:center;gap:6px;padding:6px 14px;border-bottom:1px solid var(--line);flex:none;min-height:36px}
+#gridcount{color:var(--mut);font-variant-numeric:tabular-nums;white-space:nowrap}
+#gridbar .sp{flex:1}
+#grid{flex:1;min-height:0;overflow:auto;padding:10px 14px 14px;display:flex;flex-wrap:wrap;gap:8px;align-content:flex-start}
+.cell{position:relative;height:128px;min-width:84px;background:var(--raise);cursor:pointer;outline:1px solid transparent;display:flex;user-select:none;-webkit-user-select:none}
+.cell canvas{height:128px;width:auto;display:block}
+.cell.ph{width:170px}
+.cell.sel{outline:2px solid var(--ink);outline-offset:1px}
+.cell.cur{outline:2px solid var(--acc);outline-offset:1px}
+.cell .nm{position:absolute;left:0;right:0;bottom:0;padding:10px 6px 3px;font-size:11px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  background:linear-gradient(transparent,rgba(0,0,0,.72));opacity:0;transition:opacity .12s}
+.cell:hover .nm,.cell.cur .nm{opacity:1}
+.cell .own{position:absolute;right:5px;top:5px;width:8px;height:8px;border-radius:50%;background:var(--acc);box-shadow:0 0 0 2px rgba(0,0,0,.45)}
+.cell .st{position:absolute;left:5px;top:5px;min-width:18px;height:18px;padding:0 4px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;background:rgba(0,0,0,.6)}
+.cell .st.done{background:var(--ok)}
+.cell .st.fail{background:var(--bad)}
+.cell.bad{align-items:center;justify-content:center;color:var(--bad);padding:0 10px;text-align:center;width:170px}
+
+/* ── panel ── */
+#scope{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);flex:none}
+.seg{display:flex;border:1px solid var(--line2);flex:1;min-width:0}
+.seg button{flex:1;background:none;border:0;padding:6px 8px;cursor:pointer;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seg button+button{border-left:1px solid var(--line2)}
+.seg button[aria-pressed=true]{background:var(--ink);color:var(--bg);font-weight:600}
+#controls{flex:1;min-height:0;overflow-y:auto;scrollbar-gutter:stable}
+.sec{border-bottom:1px solid var(--line);padding:12px 14px 14px}
+.sec h2{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);margin:0 0 10px;font-weight:600;display:flex;align-items:center;gap:8px}
+.sec h2 .sp{flex:1}
+.sec h2 button{letter-spacing:0;text-transform:none;font-weight:400}
+.row{display:grid;grid-template-columns:86px minmax(0,1fr) 58px;align-items:center;gap:8px;height:26px}
+.row label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row output{text-align:right;font-variant-numeric:tabular-nums;color:var(--mut)}
+.row.mod output{color:var(--ink)}
+.field{display:grid;grid-template-columns:86px minmax(0,1fr);align-items:center;gap:8px;min-height:30px;margin-top:4px}
+.field select,.field input[type=text],#looksearch{background:var(--bg);border:1px solid var(--line2);padding:5px 7px;width:100%;min-width:0;border-radius:0}
+.check{display:flex;align-items:center;gap:8px;margin-top:8px;color:var(--mut);cursor:pointer}
+.check input{accent-color:var(--acc);margin:0}
+.hint{color:var(--mut);margin:8px 0 0;line-height:1.45}
+
+input[type=range]{-webkit-appearance:none;appearance:none;background:none;width:100%;height:22px;margin:0;cursor:pointer}
+input[type=range]::-webkit-slider-runnable-track{height:2px;background:var(--line2)}
+input[type=range]::-moz-range-track{height:2px;background:var(--line2)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--ink);margin-top:-5px;border:0}
+input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--ink);border:0}
+.row.mod input[type=range]::-webkit-slider-thumb{background:var(--acc)}
+.row.mod input[type=range]::-moz-range-thumb{background:var(--acc)}
+
+/* ── looks ── */
+#chips{display:flex;gap:4px;overflow-x:auto;margin:8px 0;padding-bottom:2px;scrollbar-width:none}
+#chips::-webkit-scrollbar{display:none}
+#chips button{background:none;border:1px solid var(--line);padding:3px 8px;cursor:pointer;white-space:nowrap;color:var(--mut);border-radius:0}
+#chips button[aria-pressed=true]{border-color:var(--ink);color:var(--ink)}
+#looks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;max-height:292px;overflow-y:auto;padding:2px;margin:0 -2px 8px}
+.look{background:none;border:0;padding:0;cursor:pointer;text-align:left;min-width:0}
+.look .sw{display:block;aspect-ratio:3/2;background:var(--raise);outline:1px solid var(--line);overflow:hidden}
+.look .sw canvas{width:100%;height:100%;object-fit:cover;display:block}
+.look .ln{display:block;margin-top:3px;font-size:11px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.look[aria-pressed=true] .sw{outline:2px solid var(--acc)}
+.look[aria-pressed=true] .ln{color:var(--ink)}
+.look.none .sw{display:flex;align-items:center;justify-content:center;color:var(--mut)}
+#lookempty{color:var(--mut);padding:14px 0}
+
+/* ── export dock ── */
+#dock{border-top:1px solid var(--line);padding:10px 14px 12px;flex:none;display:flex;flex-direction:column;gap:8px}
+#dock .btn{width:100%;padding:9px 12px}
+#destline{color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ── export overlay ── */
+#ovl{position:fixed;inset:0;background:color-mix(in srgb,var(--bg) 86%,transparent);display:flex;align-items:center;justify-content:center;z-index:40;padding:20px}
+.card{background:var(--bg);border:1px solid var(--line2);width:100%;max-width:460px;padding:22px}
+.card h3{margin:0 0 4px;font-size:17px;font-weight:600}
+.card .sub{color:var(--mut);margin:0 0 14px;min-height:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar{height:3px;background:var(--line)}
+.bar i{display:block;height:100%;width:0;background:var(--acc);transition:width .2s}
+.card .nums{display:flex;justify-content:space-between;color:var(--mut);margin:8px 0 14px;font-variant-numeric:tabular-nums}
+#ovfail{max-height:140px;overflow:auto;border:1px solid var(--line);padding:8px 10px;margin-bottom:14px;color:var(--mut)}
+#ovfail b{color:var(--bad);font-weight:600}
+.card .acts{display:flex;gap:8px;justify-content:flex-end}
+
+@media (max-width:860px){
+  body{overflow:auto}
+  #app{display:flex;flex-direction:column;min-height:0;flex:none}
+  #stage{height:46vh}
+  #gridwrap{height:34vh}
+  #panel{border-left:0;border-top:1px solid var(--line)}
+  #controls{overflow:visible}
+  #dock{position:sticky;bottom:0;background:var(--bg)}
+  #welcome{min-height:70vh}
+  .drop{padding:36px 20px}
+}
+</style>
+</head>
+<body class="empty">
+
+<header id="top">
+  <div class="brand">CHROMASMITH <span>BATCH</span></div>
+  <div class="sp"></div>
+  <button class="btn" id="add-files" disabled>Add photos</button>
+  <button class="btn" id="add-folder" disabled>Add folder</button>
+  <a href="chromasmith-22.html" title="Open the full single-photo editor">Editor</a>
+</header>
+
+<main id="app">
+  <section id="welcome">
+    <div class="drop">
+      <h1>Grade a whole shoot at once</h1>
+      <p>Drop photos or a folder here. Pick one film look, fine-tune any frame that needs it, then export everything.</p>
+      <div class="row">
+        <button class="btn pri" id="w-files" disabled>Choose photos</button>
+        <button class="btn" id="w-folder" disabled>Choose folder</button>
+      </div>
+      <p class="fine" id="bootmsg">Starting the film engine…</p>
+      <p class="err" id="booterr" hidden></p>
+    </div>
+  </section>
+
+  <section id="stage" aria-label="Preview">
+    <div id="pv"><canvas id="pvc" width="2" height="2"></canvas><span class="tag" id="pvtag" hidden>Original</span></div>
+    <div id="pvbar">
+      <span id="pvname"></span><span id="pvinfo"></span>
+      <span class="sp"></span>
+      <button class="btn sm" id="hold-orig" title="Hold to see the unedited photo (or hold \)">Hold for original</button>
+    </div>
+  </section>
+
+  <section id="gridwrap" aria-label="Photos">
+    <div id="gridbar">
+      <span id="gridcount"></span>
+      <span class="sp"></span>
+      <button class="btn quiet sm" id="sel-all">Select all</button>
+      <button class="btn quiet sm" id="rm-sel">Remove selected</button>
+    </div>
+    <div id="grid" role="listbox" aria-multiselectable="true" aria-label="Photos in this batch" tabindex="0"></div>
+  </section>
+
+  <aside id="panel" aria-label="Settings">
+    <div id="scope">
+      <div class="seg" role="group" aria-label="What the controls change">
+        <button id="scope-all" aria-pressed="true">All photos</button>
+        <button id="scope-sel" aria-pressed="false">Selected only</button>
+      </div>
+      <button class="btn quiet sm" id="reset" title="Reset these settings">Reset</button>
+    </div>
+
+    <div id="controls">
+      <div class="sec">
+        <h2>Look</h2>
+        <input type="search" id="looksearch" placeholder="Search 135 film looks" aria-label="Search looks">
+        <div id="chips" role="group" aria-label="Look category"></div>
+        <div id="looks"></div>
+        <div id="lookempty" hidden>No looks match that search.</div>
+        <div id="lookrows"></div>
+        <div class="field"><label for="print">Print stock</label><select id="print"></select></div>
+        <label class="check"><input type="checkbox" id="lookfx" checked> Use each film's own grain, halation and bloom</label>
+      </div>
+      <div id="sliders"></div>
+      <div class="sec">
+        <h2>Export settings</h2>
+        <div class="field"><label for="x-fmt">Format</label><select id="x-fmt"></select></div>
+        <div class="row" id="x-qrow"><label for="x-q">Quality</label><input type="range" id="x-q" min="50" max="100" step="1"><output id="x-qv"></output></div>
+        <div class="field"><label for="x-size">Long edge</label><select id="x-size"></select></div>
+        <div class="field"><label for="x-sharp">Output sharpen</label><select id="x-sharp"></select></div>
+        <div class="field"><label for="x-name">File name</label><input type="text" id="x-name" spellcheck="false" autocomplete="off"></div>
+        <p class="hint" id="x-namehint"></p>
+        <label class="check"><input type="checkbox" id="x-gps"> Keep GPS location in the files</label>
+        <div class="field"><label for="x-dest">Save to</label><select id="x-dest"></select></div>
+        <p class="hint" id="x-desthint"></p>
+      </div>
+    </div>
+
+    <div id="dock">
+      <div id="destline"></div>
+      <button class="btn pri" id="go-all">Export all</button>
+      <button class="btn" id="go-sel">Export selected</button>
+    </div>
+  </aside>
+</main>
+
+<div id="ovl" hidden role="dialog" aria-modal="true" aria-labelledby="ovtitle">
+  <div class="card">
+    <h3 id="ovtitle">Exporting</h3>
+    <p class="sub" id="ovsub"></p>
+    <div class="bar"><i id="ovbar"></i></div>
+    <div class="nums"><span id="ovnum"></span><span id="oveta"></span></div>
+    <div id="ovfail" hidden></div>
+    <div class="acts">
+      <button class="btn" id="ovretry" hidden>Retry failed</button>
+      <button class="btn" id="ovcancel">Cancel</button>
+      <button class="btn pri" id="ovclose" hidden>Done</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="in-files" multiple hidden accept="image/*,.dng,.rw2,.arw,.cr2,.cr3,.nef,.raf,.orf,.pef,.srw,.tif,.tiff,.heic,.heif">
+<input type="file" id="in-folder" webkitdirectory multiple hidden>
+
+<script type="module" src="batch/app.js"></script>
+</body>
+</html>
