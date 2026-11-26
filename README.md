@@ -1,3 +1,7 @@
+> **Chromatogen** is a fork of [Chromasmith](https://github.com/TareqAmeer/Chroma-App) by Tareq Ameer (GPL-3.0).
+> It adds a start page (`index.html`) and a batch editor (`batch.html`, see [batch/README.md](batch/README.md)).
+> Everything below is the upstream project's README; internal names (`chromasmith-22.html`, `window.chromasmith*`) are unchanged.
+
 <h1>Chromasmith</h1>
 
 **Gallery. Studio. Film Lab**

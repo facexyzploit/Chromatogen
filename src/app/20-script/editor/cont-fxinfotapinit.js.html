@@ -236,8 +236,8 @@ function tourMaybeShow(){
     localStorage.setItem(_TOUR_KEY,'1');localStorage.setItem('chromasmith-newuser-v2','1');
     document.body.classList.add('cs-adv-hidden');
   }catch(e){return;}
-  _csModal('Welcome to <span class="cs-nowrap">CHRO-MA-SMITH</span>',tourHtml());
+  _csModal('Welcome to <span class="cs-nowrap">CHRO-MA-TO-GEN</span>',tourHtml());
   tourBind();
 }
-window.chromasmithShowTour=function(){_csModal('Welcome to <span class="cs-nowrap">CHRO-MA-SMITH</span>',tourHtml());tourBind();}; // manual replay (Help menu / palette) — bypasses the once-only flag
+window.chromasmithShowTour=function(){_csModal('Welcome to <span class="cs-nowrap">CHRO-MA-TO-GEN</span>',tourHtml());tourBind();}; // manual replay (Help menu / palette) — bypasses the once-only flag
 window.chromasmithShowShortcuts=csOpenShortcuts;

@@ -1,6 +1,6 @@
-# Chromasmith Batch
+# Chromatogen Batch
 
-`batch.html` is a batch-first front end for Chromasmith: drop a folder, pick one film look, adjust
+`batch.html` is a batch-first front end for the Chromasmith engine: drop a folder, pick one film look, adjust
 any frame that needs it, export everything. It is a separate page; `chromasmith-22.html` is not
 modified.
 

@@ -1,4 +1,4 @@
-// Chromasmith Batch — UI. All rendering goes through ./engine.js (the real Chromasmith renderer in
+// Chromatogen Batch — UI. All rendering goes through ./engine.js (the real Chromasmith renderer in
 // a hidden frame); this file only owns the batch: which photos, which recipe, where files go.
 import { Engine, PRIO } from './engine.js';
 import { ZipWriter } from './zip.js';
@@ -484,7 +484,7 @@ class FolderSink {
 class ZipSink {
   constructor() {
     const d = new Date(), z = (n) => String(n).padStart(2, '0');
-    this.stem = `chromasmith-batch-${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}`;
+    this.stem = `chromatogen-batch-${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}`;
     this.used = new Set(); this.zip = new ZipWriter(); this.part = 0; this.where = 'your downloads';
   }
   async write(base, ext, bytes) {
