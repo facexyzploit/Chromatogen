@@ -210,14 +210,28 @@ export class Engine {
     });
   }
 
-  // Grade a (small) source canvas with a recipe. Effect radii scale with image width inside the
-  // renderer, so a proxy shows the same look the full-size export gets.
-  render(key, prio, src, recipe, isRaw) {
+  // Grade a (small) source canvas with a recipe, as the full-size export will look at this size.
+  // `fullW` is the width the export renders at: the renderer uses it (opts.truncRefW, the same
+  // option the editor's fit-to-screen preview passes) to lay grain out on the export's cell grid
+  // and attenuate it the way downscaling would, and to match the glow kernel. Without it a proxy
+  // shows grain several times coarser and stronger than the exported file.
+  render(key, prio, src, recipe, isRaw, fullW) {
     return this.run(key, prio, async () => {
       await this._apply(recipe, isRaw);
-      const w = this.w;
+      const w = this.w, iw = src.width, ih = src.height;
       const P = w.getFXParams(); P.redEyeOps = [];
-      return await w.processToCanvas(P, src, src.width, src.height, () => {});
+      const FX = this._ev('FX');
+      if (typeof FX.setImage !== 'function' || typeof FX.render !== 'function' || !FX.cv) return await w.processToCanvas(P, src, iw, ih, () => {});
+      const prev = FX._maskReferenceSize; FX._maskReferenceSize = { w: iw, h: ih };
+      try {
+        if (typeof w.fxDrcApplyFor === 'function') await w.fxDrcApplyFor(FX, P, src);
+        FX.setImage(src);
+        FX.render(P, iw, ih, { glowScale: typeof w.fxGlowScale === 'function' ? w.fxGlowScale() : 1, truncRefW: fullW > iw ? fullW : 0 });
+        // Copy out in the same task as the draw, while the GL back buffer is still valid.
+        const c = document.createElement('canvas'); c.width = iw; c.height = ih;
+        c.getContext('2d').drawImage(FX.cv, 0, 0, iw, ih);
+        return c;
+      } finally { FX._maskReferenceSize = prev; }
     });
   }
 
@@ -237,7 +251,7 @@ export class Engine {
       item._exportLoad = async () => ({ ...(await this._decode(file)), geom: item.geom });
       this._captured = null; this.lastLog = ''; w._expFail = [];
       this._lockHistory();
-      await w.exportFX({ items: [item] });
+      try { await w.exportFX({ items: [item] }); } finally { this._applied = null; } // the export path may move controls
       const got = this._captured && this._captured[0];
       this._captured = null;
       if (!got) {

@@ -84,6 +84,7 @@ body.dragging::after{content:'Drop to add photos';position:fixed;inset:8px;borde
 .cell{position:relative;height:128px;min-width:84px;background:var(--raise);cursor:pointer;outline:1px solid transparent;display:flex;user-select:none;-webkit-user-select:none}
 .cell canvas{height:128px;width:auto;display:block}
 .cell.ph{width:170px}
+.cell.ph canvas{display:none}
 .cell.sel{outline:2px solid var(--ink);outline-offset:1px}
 .cell.cur{outline:2px solid var(--acc);outline-offset:1px}
 .cell .nm{position:absolute;left:0;right:0;bottom:0;padding:10px 6px 3px;font-size:11px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
@@ -155,6 +156,9 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;bac
 #ovfail{max-height:140px;overflow:auto;border:1px solid var(--line);padding:8px 10px;margin-bottom:14px;color:var(--mut)}
 #ovfail b{color:var(--bad);font-weight:600}
 .card .acts{display:flex;gap:8px;justify-content:flex-end}
+
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;z-index:60;max-width:min(92vw,560px);font-weight:600}
+#toast.bad{background:var(--bad);color:#fff}
 
 @media (max-width:860px){
   body{overflow:auto}
@@ -244,6 +248,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;bac
         <label class="check"><input type="checkbox" id="x-gps"> Keep GPS location in the files</label>
         <div class="field"><label for="x-dest">Save to</label><select id="x-dest"></select></div>
         <p class="hint" id="x-desthint"></p>
+        <button class="btn sm" id="x-pick" style="margin-top:8px">Choose folder…</button>
       </div>
     </div>
 
@@ -270,9 +275,19 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;bac
   </div>
 </div>
 
+<div id="toast" role="status" aria-live="polite" hidden></div>
+
 <input type="file" id="in-files" multiple hidden accept="image/*,.dng,.rw2,.arw,.cr2,.cr3,.nef,.raf,.orf,.pef,.srw,.tif,.tiff,.heic,.heif">
 <input type="file" id="in-folder" webkitdirectory multiple hidden>
 
+<script>
+// Modules and the isolation shim both need http(s); say so instead of sitting on "Starting…".
+if (location.protocol === 'file:') {
+  document.getElementById('bootmsg').hidden = true;
+  var e = document.getElementById('booterr'); e.hidden = false;
+  e.textContent = 'This page cannot run from a file:// path. Serve the folder (python3 -m http.server 8000) and open http://localhost:8000/batch.html';
+}
+</script>
 <script type="module" src="batch/app.js"></script>
 </body>
 </html>
